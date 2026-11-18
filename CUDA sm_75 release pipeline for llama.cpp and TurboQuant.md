@@ -141,7 +141,7 @@ Minimal package set, with `MM` as `12-8` or `13-0` **\[verify exact names on fir
 | `CMAKE_CUDA_COMPILER_LAUNCHER` | `ccache` | Caches nvcc output, which the notebook missed. **Verified 18 Nov 2026:** `GGML_CCACHE=ON` (default) auto-detects ccache for C/CXX only (`ggml/src/CMakeLists.txt`) and never sets the CUDA launcher — set it explicitly. |
 | `BUILD_SHARED_LIBS` | OFF | Single-file binaries, as in the notebook. |
 
-| `CMAKE_EXE_LINKER_FLAGS` | `-static-libgcc -static-libstdc++` | As in the notebook. No RPATH is set, because both runtimes register the CUDA libraries in the loader cache. |
+| `CMAKE_EXE_LINKER_FLAGS` | `-static-libgcc -static-libstdc++ -s` | As in the notebook, plus `-s` to strip symbols (smaller archives for ephemeral environments; decided 18 Nov 2026). No RPATH is set, because both runtimes register the CUDA libraries in the loader cache. |
 | HTTPS model download (`-hf`) | `LLAMA_OPENSSL=ON` plus `libssl-dev` | Option names have changed repeatedly (`LLAMA_CURL`, `LLAMA_OPENSSL`, BoringSSL variants). Run `cmake -LH` and grep the fork's `CMakeLists.txt` rather than trusting a list. |
 | `LLAMA_BUILD_TESTS` / `EXAMPLES` | OFF | Faster build. |
 
@@ -257,7 +257,7 @@ jobs:
             -DCMAKE_CUDA_ARCHITECTURES=75-real -DGGML_NATIVE=OFF \
             -DGGML_CUDA_FA_ALL_QUANTS=OFF -DBUILD_SHARED_LIBS=OFF \
             -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++" \
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -s" \
             -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
             -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF
           cmake --build build -j"$(nproc)" \

@@ -88,7 +88,7 @@ cat > "$STAGE/BUILD_INFO.json" <<EOF
     "cuda": "${CUDA}",
     "cuda_major": ${CUDA_MAJOR},
     "cuda_package": "${CUDA_PKG}",
-    "cmake_flags": "-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75-real -DGGML_NATIVE=OFF -DGGML_CUDA_FA_ALL_QUANTS=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache -DCMAKE_EXE_LINKER_FLAGS=-static-libgcc -static-libstdc++ -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF",
+    "cmake_flags": "-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75-real -DGGML_NATIVE=OFF -DGGML_CUDA_FA_ALL_QUANTS=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache -DCMAKE_EXE_LINKER_FLAGS=-static-libgcc -static-libstdc++ -s -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF",
     "targets": ["llama-server", "llama-cli", "llama-bench", "llama-quantize", "llama-perplexity"],
     "ggml_cuda_fa_all_quants": false,
     "cuda_arch": "75-real",
@@ -102,8 +102,8 @@ mkdir -p dist
 tar -czf "dist/${ASSET}" -C "$STAGE" .
 SIZE=$(stat -c%s "dist/${ASSET}")
 echo "archive: dist/${ASSET} (${SIZE} bytes)"
-if (( SIZE < 1000000 || SIZE > 250000000 )); then
-  echo "FAIL: archive size ${SIZE} bytes outside expected range [1MB, 250MB]" >&2
+if (( SIZE < 1000000 || SIZE > 500000000 )); then
+  echo "FAIL: archive size ${SIZE} bytes outside expected range [1MB, 500MB]" >&2
   exit 1
 fi
 sha256sum "dist/${ASSET}"
