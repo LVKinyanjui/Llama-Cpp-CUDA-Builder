@@ -51,7 +51,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
-      CUDA_HOME: /usr/local/cuda-${{ matrix.cuda_mm }}
+      CUDA_HOME: /usr/local/cuda-${{ matrix.cuda }}
       CCACHE_COMPILERCHECK: content
     steps:
       - name: Install dependencies
