@@ -7,8 +7,9 @@ Builds sm_75 (T4) CUDA binaries of [llama.cpp](https://github.com/ggml-org/llama
 | Ubuntu 22.04 (container) | Kaggle | 12.8 | Phase 1 (first deliverable) |
 | Ubuntu 24.04 | Colab | 13.0 | Phase 2 |
 
-- **Trigger:** twice-weekly cron (Mon/Thu 04:17 UTC) + manual dispatch (`source`, `ref`, `force`).
-- **Releases:** one immutable release per (source, ref) + rolling `llama-cpp-latest` / `turboquant-latest` with stable asset names. Keeps the last 8 immutable releases per source.
+- **Workflows:** one per source — `cuda-t4-release-llama-cpp.yml` and `cuda-t4-release-turboquant.yml` — each twice-weekly (Mon/Thu 04:17 UTC) + manual dispatch (`ref`, `force`), so each source can be iterated on independently.
+- **Releases:** one immutable release per (source, ref) + rolling `llama-cpp-latest` / `turboquant-latest` with stable asset names, published with `softprops/action-gh-release`. Keeps the last 8 immutable releases per source.
+- **Web UI:** dropped for the initial build only; it MUST be present in subsequent builds after initial verification (built from source with npm, not the HF bucket).
 - **Binaries:** `llama-server`, `llama-cli`, `llama-bench`, `llama-quantize`, `llama-perplexity`. Static cudart, dynamic cuBLAS/cuBLASLt by major soname; nothing from NVIDIA is bundled.
 - **Progress:** see `Task.md`. **Design:** see `CUDA sm_75 release pipeline for llama.cpp and TurboQuant.md`.
 

@@ -174,17 +174,20 @@ Each release contains the 2 archives (Ubuntu 24.04 + CUDA 13.0 for Colab, Ubuntu
 
 ## 11. Pipeline architecture
 
-1. **plan** (read-only): resolve each source to a concrete SHA and ref (`git ls-remote`, API for the default branch). Drop sources whose release tag already exists unless `force`. Emit the build matrix as JSON. Using one SHA for all jobs prevents a mid-run commit from producing mismatched archives.
+**Two workflows, one per source** (settled 18 Nov 2026): `cuda-t4-release-llama-cpp.yml` and `cuda-t4-release-turboquant.yml`, sharing `.github/scripts/`, so each source iterates independently. Each workflow has the same three jobs:
+
+1. **plan** (read-only): resolve the source to a concrete SHA and ref (`git ls-remote`, API for the default branch / newest `bNNNN`). Drop the source whose release tag already exists unless `force`. Emit the build matrix as JSON. Using one SHA for all jobs prevents a mid-run commit from producing mismatched archives.
 2. **build** (matrix, read-only, no secrets): checkout the pinned SHA, install deps and CUDA, restore ccache, configure, build, verify, package, upload artifact.
-3. **release** (write permission, no source execution): download artifacts, publish a source's immutable release only if **both** of its assets exist, write checksums and manifest, then refresh that source's rolling `-latest` release.
-4. **warm** (read-only): for any source with nothing new, restore its ccache entries without building, so they stay inside the 7-day window.
+3. **release** (write permission, no source execution): download artifacts; `stage-release.sh` checks all of the source's assets exist (all-or-nothing), writes `SHA256SUMS` + `manifest.json` + notes, and stages stable-named assets for the rolling `-latest` release; then `softprops/action-gh-release` (v3.0.4, SHA-pinned) publishes the immutable release and refreshes `<source>-latest`; `prune-releases.sh` keeps the last 8 immutable releases per source.
+
+4. **warm** (read-only, not yet implemented): for any source with nothing new, restore its ccache entries without building, so they stay inside the 7-day window.
 5. **No HF mirror** (settled 18 Nov 2026): releasing as a GitHub asset is sufficient.
 
 **Verification gates in `build` (no GPU needed):**
 
-- `ldd` on every binary reports no `not found`, and the set of needed CUDA libraries equals the expected sonames for that target (for example `libcublas.so.13` and `libcublasLt.so.13` for CUDA 13.0).
+- `ldd` on every binary reports no `not found` **except `libcuda.so.1`** (the driver library — absent on GPU-less runners, provided by the NVIDIA driver on the target), and the set of needed CUDA libraries equals the expected sonames for that target (for example `libcublas.so.13` and `libcublasLt.so.13` for CUDA 13.0).
 - `cuobjdump --list-elf` on the binary or backend library shows **only `sm_75`**.
-- `llama-server --version` and `llama-cli --version` exit 0 on a CPU-only runner (no driver present).
+- `llama-server --version` and `llama-cli --version` — warn-only on GPU-less runners (the binaries hard-depend on `libcuda.so.1`); the real smoke test happens on the T4.
 - Archive size is within an expected range (catches a flag that silently doubled it).
 
 The real functional test, loading a model on a T4, stays **manual** (a Colab notebook that downloads the release) until you decide to add a self-hosted GPU runner.
@@ -254,7 +257,8 @@ jobs:
             -DCMAKE_CUDA_RUNTIME_LIBRARY=Static \
             -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
             -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++" \
-            -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF
+            -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF
           cmake --build build -j"$(nproc)" \
             --target llama-server llama-cli llama-bench llama-quantize llama-perplexity
       - run: scripts/package.sh   # ldd/cuobjdump gates, BUILD_INFO.json, check-runtime.sh, tar -> dist/
@@ -270,13 +274,23 @@ jobs:
       - uses: actions/checkout@<sha>
       - uses: actions/download-artifact@<sha>
         with: { path: dist, merge-multiple: true }
-      - env: { GH_TOKEN: "${{ github.token }}" }
-        run: .github/scripts/release.sh   # per source: publish only if both assets present, then refresh <source>-latest
+      - id: stage
+        env: { MATRIX: "${{ needs.plan.outputs.matrix }}" }
+        run: bash .github/scripts/stage-release.sh   # all-or-nothing check, SHA256SUMS, manifest.json, notes, stable-name copies
+      - if: steps.stage.outputs.publish == 'true'
+        uses: softprops/action-gh-release@<sha>   # v3.0.4
+        with: { tag_name: "${{ steps.stage.outputs.tag }}", files: "${{ steps.stage.outputs.assets_dir }}/*", prerelease: "${{ steps.stage.outputs.prerelease }}", body_path: "${{ steps.stage.outputs.notes }}", fail_on_unmatched_files: true }
+      - if: steps.stage.outputs.publish == 'true'
+        uses: softprops/action-gh-release@<sha>   # v3.0.4
+        with: { tag_name: "${{ steps.stage.outputs.latest_tag }}", files: "${{ steps.stage.outputs.latest_dir }}/*", prerelease: true, body_path: "${{ steps.stage.outputs.latest_notes }}", fail_on_unmatched_files: true }
+      - if: steps.stage.outputs.publish == 'true'
+        env: { GH_TOKEN: "${{ github.token }}", NAME: "${{ steps.stage.outputs.name }}" }
+        run: bash .github/scripts/prune-releases.sh   # keep last 8 immutable releases per source
 ```
 
 `scripts/install-cuda.sh` is roughly: download `cuda-keyring_1.1-1_all.deb` from `https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${2204|2404}/x86_64/`, `dpkg -i` it, `apt-get update`, then install the three packages for the matrix's `MM`.
 
-Not shown: the restore-only `warm` job for sources with nothing new, and `CCACHE_COMPILERCHECK=content` in the build step's environment. The `max-size: 1G` value is a placeholder to tune after measuring real cache sizes in Phase 1.
+Not shown: the restore-only `warm` job for sources with nothing new, and `CCACHE_COMPILERCHECK=content` in the build step's environment. The `max-size: 1G` value is a placeholder to tune after measuring real cache sizes in Phase 1. The skeleton is per source — the repo ships two workflow files (`cuda-t4-release-llama-cpp.yml`, `cuda-t4-release-turboquant.yml`), one per source, sharing `.github/scripts/`. The Web UI is disabled for the initial build (`LLAMA_BUILD_UI=OFF`) and MUST be re-enabled from source with npm after initial verification.
 
 ## 13. Risks and open questions
 
@@ -297,7 +311,7 @@ Not shown: the restore-only `warm` job for sources with nothing new, and `CCACHE
 
 **Phase 0: confirm the unknowns (a few hours).** The runtime check is done: both runtimes register `libcudart`, `libcublas` and `libcublasLt` in the loader cache. Phase 0 research completed 18 Nov 2026 (see section 3): TurboQuant default branch and `qwen35` support confirmed; `GGML_CCACHE` covers C/CXX only; `ggml-org/ccache-action` verified; `bNNNN` prerelease scheme confirmed. Still to check: the exact apt package names for 13.0 and 12.8 on both distros; `GGML_CUDA_CCCL_VERSION` for CUDA 12.8; how ccache-action names and saves entries; the TurboQuant build flags; and the runtimes' CPU flags.
 
-**Phase 1: Kaggle deliverable (first milestone).** Ubuntu 22.04 (container) + CUDA 12.8, **both sources** (llama-cpp and TurboQuant), `FA_ALL_QUANTS=OFF`, the five targets, verification gates, packaging, and the full pipeline: twice-weekly poller (Mon/Thu 04:17 UTC) + manual dispatch, idempotency by tag, all-or-nothing release, checksums/manifest, rolling `-latest` releases, the restore-only `warm` job, and pruning to 8 immutable releases per source. Loose TDD: gates first, then build, then release; validate layer by layer via live runs (`gh run view --log`). Record cold and warm times, ccache size and hit rate, archive size, `ldd` output and `cuobjdump` output. Download the archive on a Kaggle T4, run `check-runtime.sh`, and run `Qwen3.8-27B-GSQ-RCO-IQ2_S-mtp.gguf` (turbo5 K / turbo3 V or f16 KV — turbo4 K / turbo3 V needs Phase 3). This confirms dynamic cuBLAS resolves with nothing bundled.
+**Phase 1: Kaggle deliverable (first milestone).** Ubuntu 22.04 (container) + CUDA 12.8, **both sources** (llama-cpp and TurboQuant), `FA_ALL_QUANTS=OFF`, the five targets, verification gates, packaging, and the full pipeline: twice-weekly poller (Mon/Thu 04:17 UTC) + manual dispatch, idempotency by tag, all-or-nothing release, checksums/manifest, rolling `-latest` releases, and pruning to 8 immutable releases per source. **Web UI disabled for the initial build** (`LLAMA_BUILD_UI=OFF`); it MUST be re-enabled from source with npm after initial verification. Loose TDD: gates first, then build, then release; validate layer by layer via live runs (`gh run view --log`). Record cold and warm times, ccache size and hit rate, archive size, `ldd` output and `cuobjdump` output. Download the archive on a Kaggle T4, run `check-runtime.sh`, and run `Qwen3.8-27B-GSQ-RCO-IQ2_S-mtp.gguf` (turbo5 K / turbo3 V or f16 KV — turbo4 K / turbo3 V needs Phase 3). This confirms dynamic cuBLAS resolves with nothing bundled.
 
 **Phase 2: Colab target.** Add Ubuntu 24.04 + CUDA 13.0 (no container), then verify on a Colab T4. Tune cache keys.
 
@@ -308,9 +322,12 @@ Not shown: the restore-only `warm` job for sources with nothing new, and `CCACHE
 
 ## 15. Settled decisions and what is left
 
-**Settled:** public `Llama-Cpp-CUDA-Builder` repo (default branch `main`); both llama.cpp and TurboQuant; **Kaggle (Ubuntu 22.04, CUDA 12.8) is the first deliverable**, Colab (Ubuntu 24.04, CUDA 13.0) second; `FA_ALL_QUANTS=OFF` initially, `ON` in the validatable-binaries phase (required for turbo4 K / turbo3 V); dynamic cuBLAS with a major-only soname and oldest-minor builds; twice-weekly cadence plus manual dispatch; rolling latest releases; keep the last 8 immutable releases per source; no HF mirror — GitHub assets are sufficient; `ggml-org/ccache-action` (pinned by SHA); track latest `bNNNN` prerelease; live-run validation via authenticated `gh` CLI; loose TDD (gates first).
+**Settled:** public `Llama-Cpp-CUDA-Builder` repo (default branch `main`); both llama.cpp and TurboQuant; **Kaggle (Ubuntu 22.04, CUDA 12.8) is the first deliverable**, Colab (Ubuntu 24.04, CUDA 13.0) second; `FA_ALL_QUANTS=OFF` initially, `ON` in the validatable-binaries phase (required for turbo4 K / turbo3 V); dynamic cuBLAS with a major-only soname and oldest-minor builds; twice-weekly cadence plus manual dispatch; rolling latest releases; keep the last 8 immutable releases per source; no HF mirror — GitHub assets are sufficient; `ggml-org/ccache-action` (pinned by SHA); track latest `bNNNN` prerelease; live-run validation via authenticated `gh` CLI; loose TDD (gates first); **two workflows, one per source** (`cuda-t4-release-llama-cpp.yml`, `cuda-t4-release-turboquant.yml`); **releases published with `softprops/action-gh-release`** (v3.0.4, SHA-pinned); **Web UI dropped for the initial build only — it MUST be present in subsequent builds after initial verification** (built from source with npm, not the HF bucket).
 
 **Still open:**
 
 1. ~~How many immutable releases per source to keep~~ — settled: 8.
 2. Nothing else blocks Phase 0. Every item marked **\[verify\]** resolves in Phases 0 and 1.
+3. ~~Web UI~~ — settled: dropped for the initial build only; MUST be present in subsequent builds after initial verification (build from source with npm).
+4. ~~Canonical release approach~~ — settled: `softprops/action-gh-release` (v3.0.4, `8a0cd651e5b2365bd640854a3fa5dfc70e4875f3`).
+5. ~~Separate build processes per source~~ — settled: two workflow files sharing `.github/scripts/`.

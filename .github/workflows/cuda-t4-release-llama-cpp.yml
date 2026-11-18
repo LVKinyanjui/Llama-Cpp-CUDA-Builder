@@ -1,17 +1,12 @@
-name: cuda-t4-release
+name: cuda-t4-release-llama-cpp
 
 on:
   schedule:
     - cron: "17 4 * * 1,4"
   workflow_dispatch:
     inputs:
-      source:
-        description: "Which source to build"
-        type: choice
-        options: [all, llama-cpp, turboquant]
-        default: all
       ref:
-        description: "Branch/tag/SHA/refs/pull/N/head (blank = latest)"
+        description: "Branch/tag/SHA/refs/pull/N/head (blank = latest bNNNN)"
         required: false
         type: string
       force:
@@ -22,7 +17,7 @@ on:
 permissions: { contents: read }
 
 concurrency:
-  group: cuda-t4-release-${{ github.ref }}
+  group: cuda-t4-release-llama-cpp-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -35,7 +30,7 @@ jobs:
       - id: p
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE: ${{ inputs.source }}
+          SOURCE: llama-cpp
           REF: ${{ inputs.ref }}
           FORCE: ${{ inputs.force }}
         run: bash .github/scripts/plan.sh
@@ -85,7 +80,8 @@ jobs:
             -DCMAKE_CUDA_RUNTIME_LIBRARY=Static \
             -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
             -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++" \
-            -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF
+            -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF
           cmake --build build -j"$(nproc)" \
             --target llama-server llama-cli llama-bench llama-quantize llama-perplexity
       - name: Package
@@ -118,8 +114,32 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Publish releases
+      - name: Stage release assets
+        id: stage
+        env:
+          MATRIX: ${{ needs.plan.outputs.matrix }}
+        run: bash .github/scripts/stage-release.sh
+      - name: Publish immutable release
+        if: steps.stage.outputs.publish == 'true'
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          tag_name: ${{ steps.stage.outputs.tag }}
+          files: ${{ steps.stage.outputs.assets_dir }}/*
+          prerelease: ${{ steps.stage.outputs.prerelease }}
+          body_path: ${{ steps.stage.outputs.notes }}
+          fail_on_unmatched_files: true
+      - name: Publish rolling latest release
+        if: steps.stage.outputs.publish == 'true'
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          tag_name: ${{ steps.stage.outputs.latest_tag }}
+          files: ${{ steps.stage.outputs.latest_dir }}/*
+          prerelease: true
+          body_path: ${{ steps.stage.outputs.latest_notes }}
+          fail_on_unmatched_files: true
+      - name: Prune old immutable releases
+        if: steps.stage.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          MATRIX: ${{ needs.plan.outputs.matrix }}
-        run: bash .github/scripts/release.sh
+          NAME: ${{ steps.stage.outputs.name }}
+        run: bash .github/scripts/prune-releases.sh
