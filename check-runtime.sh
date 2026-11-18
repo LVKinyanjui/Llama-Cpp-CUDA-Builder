@@ -20,7 +20,7 @@ if [[ -z "$MAJOR" ]]; then
 fi
 
 missing=0
-for lib in "libcublas.so.${MAJOR}" "libcublasLt.so.${MAJOR}"; do
+for lib in "libcudart.so.${MAJOR}" "libcublas.so.${MAJOR}" "libcublasLt.so.${MAJOR}"; do
   if ldconfig -p | grep -q "$lib"; then
     echo "ok: $lib"
   else

@@ -68,9 +68,9 @@ done < <(jq -r '.[].asset' <<< "$MATRIX")
 cat > "$WORK/notes.md" <<EOF
 Automated sm_75 CUDA build of \`$repo\` @ \`$sha\` (\`$ref\`).
 
-- Arch: sm_75 (75-real); static cudart; dynamic cuBLAS/cuBLASLt by major soname
+- Arch: sm_75 (75-real); dynamic cudart/cuBLAS/cuBLASLt by major soname
 - \`GGML_CUDA_FA_ALL_QUANTS=OFF\`
-- Requires: NVIDIA driver >= 525 (CUDA 12.x) and the CUDA toolkit libraries registered in the loader cache (\`libcublas.so.12\`, \`libcublasLt.so.12\`). See \`check-runtime.sh\` in the archive.
+- Requires: NVIDIA driver >= 525 (CUDA 12.x) and the CUDA toolkit libraries registered in the loader cache (\`libcudart.so.12\`, \`libcublas.so.12\`, \`libcublasLt.so.12\`). See \`check-runtime.sh\` in the archive.
 EOF
 
 cat > "$WORK/latest-notes.md" <<EOF

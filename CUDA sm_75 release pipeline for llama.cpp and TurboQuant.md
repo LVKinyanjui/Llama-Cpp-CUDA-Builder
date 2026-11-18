@@ -14,7 +14,7 @@ The notebook already contains the whole recipe: install CUDA, build with ccache 
 | 4 | Targets | **Two per source, matched to your runtimes:** Ubuntu 24.04 + CUDA 13.0 (Colab) and Ubuntu 22.04 + CUDA 12.8 (Kaggle). The 22.04 build runs **inside an `ubuntu:22.04` container**, because GitHub retires the 22.04 runner on 17 Apr 2027. |
 | 5 | Toolkit on the build runner | 13.0.x and 12.8.x: the **oldest minor you support**, from NVIDIA's apt network repo with minimal packages. Binaries keep working on later minors of the same major. |
 | 6 | GPU arch | `CMAKE_CUDA_ARCHITECTURES=75-real`. |
-| 7 | Linking | Static cudart, **dynamic cuBLAS/cuBLASLt resolved from the runtime's toolkit by major soname** (`.12` or `.13`). Nothing from NVIDIA is bundled, so archives are as small as possible. |
+| 7 | Linking | **Dynamic cudart/cuBLAS/cuBLASLt resolved from the runtime's toolkit by major soname** (`.12` or `.13`). Nothing from NVIDIA is bundled, so archives are as small as possible. (Static cudart + dynamic cuBLAS is not viable: `libcublas.so.12` NEEDs `libcudart.so.12`.) |
 | 8 | KV-quant kernels | **`GGML_CUDA_FA_ALL_QUANTS=OFF` initially** (rapid prototyping; decided 18 Nov 2026). Flip to `ON` in the validatable-binaries phase — required for TurboQuant's turbo4 K / turbo3 V, which is not in the default FA kernel set. Plain llama.cpp has no turbo types. Compiles are long, so ccache is essential. |
 | 9 | Releases | **One immutable release per (source, ref)** with two assets plus checksums, plus two moving releases (`llama-cpp-latest`, `turboquant-latest`) with stable asset names. Keep the last **8** immutable releases per source (settled 18 Nov 2026). GitHub assets are sufficient — no Hugging Face mirror. |
 | 10 | Security | Build jobs have a read-only token and no secrets. A separate release job holds write access and never executes source code. |
@@ -37,7 +37,7 @@ The notebook already contains the whole recipe: install CUDA, build with ccache 
 ### Problems found in the notebook (worth fixing before porting)
 
 1. **nvcc output is not cached.** Only `CMAKE_C_COMPILER_LAUNCHER` and `CMAKE_CXX_COMPILER_LAUNCHER` are set, and CUDA compilation is the slow part. Set `CMAKE_CUDA_COMPILER_LAUNCHER` too. **Verified 18 Nov 2026:** the fork's `ggml/src/CMakeLists.txt` shows `GGML_CCACHE=ON` (default) auto-detects ccache and sets `RULE_LAUNCH_COMPILE` for C/CXX only — it never sets `CMAKE_CUDA_COMPILER_LAUNCHER`. Explicit `CMAKE_CUDA_COMPILER_LAUNCHER=ccache` is required.
-2. **cuBLAS is a shared dependency.** `-DCMAKE_CUDA_RUNTIME_LIBRARY=Static` covers cudart only, so the binaries need `libcublas` and `libcublasLt` from the runtime's toolkit. That suits your runtimes (section 9) but must be confirmed with `ldd` and on both machines.
+2. **cuBLAS is a shared dependency.** `-DCMAKE_CUDA_RUNTIME_LIBRARY=Static` does not change ggml's link choice — ggml links `CUDA::cudart` (shared) by default, and `libcublas.so.12` NEEDs `libcudart.so.12` anyway, so dynamic cudart is unavoidable with dynamic cuBLAS. The binaries need `libcudart`, `libcublas` and `libcublasLt` from the runtime's toolkit. That suits your runtimes (section 9) and is confirmed with `ldd`.
 3. **PR checkout is not conditional.** The `git fetch ... {pr_ID}` lines sit outside the `if`, so an empty PR field fails with a NameError.
 4. **`repo_url` carries literal escaped quotes** in the dropdown value, and the `LD_LIBRARY_PATH` lines overwrite each other. Both are irrelevant in CI but would be copied if ported verbatim.
 5. **Ubuntu 22.04 is hard-coded** in the CUDA repo URLs, so the notebook cannot produce 24.04 builds.
@@ -121,7 +121,7 @@ Two targets cover both runtimes: **Ubuntu 24.04 for Colab** and **Ubuntu 22.04 f
 Minimal package set, with `MM` as `12-8` or `13-0` **\[verify exact names on first run\]**: `cuda-compiler-MM cuda-libraries-dev-MM cuda-cuobjdump-MM`
 
 - Set `CUDA_HOME=/usr/local/cuda-13.0` (or `-12.8`) explicitly and pass `-DCMAKE_CUDA_COMPILER=$CUDA_HOME/bin/nvcc`. Don't rely on the `/usr/local/cuda` symlink.
-- **Build with the oldest minor you support (12.8 and 13.0) and run on anything newer in the same major.** The binaries record only the major soname (`libcublas.so.12` or `.13`) and embed static cudart, so a runtime that moves to 12.9 or 13.1 keeps working. Only a runtime below the build minor, or a new major, breaks it. ABI stability within a major is **\[verify\]** for cuBLAS: test one cross-minor pairing when a runtime next upgrades.
+- **Build with the oldest minor you support (12.8 and 13.0) and run on anything newer in the same major.** The binaries record only the major soname (`libcudart.so.12`, `libcublas.so.12` or `.13`), so a runtime that moves to 12.9 or 13.1 keeps working. Only a runtime below the build minor, or a new major, breaks it. ABI stability within a major is **\[verify\]** for cuBLAS: test one cross-minor pairing when a runtime next upgrades.
 - apt resolves the latest patch of a minor version. To pin the patch, append `=<version>` to package names. Record the toolkit version actually used in `BUILD_INFO.json`.
 - Upstream CI notes `GGML_CUDA_CCCL_VERSION=v3.4.3` may be required for CTK < 13.5 (CUDA 12.8). If configure fails with CCCL errors, set it **\[verify in spike\]**.
 - **Compiler compatibility:** GCC 11 (22.04) and GCC 13 (24.04) are both accepted by these toolkits.
@@ -140,7 +140,7 @@ Minimal package set, with `MM` as `12-8` or `13-0` **\[verify exact names on fir
 | `GGML_CUDA_COMPRESSION_MODE` | `size` (try it) | Shrinks the fatbin. Archive size matters for ephemeral environments, so test the effect on size and on load time. |
 | `CMAKE_CUDA_COMPILER_LAUNCHER` | `ccache` | Caches nvcc output, which the notebook missed. **Verified 18 Nov 2026:** `GGML_CCACHE=ON` (default) auto-detects ccache for C/CXX only (`ggml/src/CMakeLists.txt`) and never sets the CUDA launcher — set it explicitly. |
 | `BUILD_SHARED_LIBS` | OFF | Single-file binaries, as in the notebook. |
-| `CMAKE_CUDA_RUNTIME_LIBRARY` | Static | As in the notebook. |
+
 | `CMAKE_EXE_LINKER_FLAGS` | `-static-libgcc -static-libstdc++` | As in the notebook. No RPATH is set, because both runtimes register the CUDA libraries in the loader cache. |
 | HTTPS model download (`-hf`) | `LLAMA_OPENSSL=ON` plus `libssl-dev` | Option names have changed repeatedly (`LLAMA_CURL`, `LLAMA_OPENSSL`, BoringSSL variants). Run `cmake -LH` and grep the fork's `CMakeLists.txt` rather than trusting a list. |
 | `LLAMA_BUILD_TESTS` / `EXAMPLES` | OFF | Faster build. |
@@ -153,9 +153,11 @@ Minimal package set, with `MM` as `12-8` or `13-0` **\[verify exact names on fir
 
 | Strategy | Archive | Needs at runtime |
 | --- | --- | --- |
-| **Static cudart, dynamic cuBLAS/cuBLASLt (recommended)** | Smallest | NVIDIA driver plus CUDA libraries with the same **major** soname (`libcublas.so.13` on Colab, `.12` on Kaggle). Any minor at or above the build minor. |
+| **Dynamic cudart/cuBLAS/cuBLASLt (chosen 18 Nov 2026)** | Smallest | NVIDIA driver plus CUDA libraries with the same **major** soname (`libcudart.so.12`, `libcublas.so.12`, `libcublasLt.so.12` on Kaggle; `.13` on Colab). Any minor at or above the build minor. |
 | Bundle cuBLAS/cuBLASLt next to the binaries | Hundreds of MB larger | Only the driver |
-| Static cuBLAS (`GGML_STATIC` selects static cudart/cuBLAS in upstream CMake) | Larger binaries | Only the driver. **Check that it doesn't also force `-static` glibc \[verify\].** |
+| Static cuBLAS (`GGML_STATIC=ON` selects static cudart/cuBLAS/cuBLASLt in upstream CMake) | Larger binaries | Only the driver. **Check that it doesn't also force `-static` glibc \[verify\].** |
+
+**Why not static cudart + dynamic cuBLAS:** `libcublas.so.12` has `NEEDED libcudart.so.12`, so dynamic cuBLAS pulls in dynamic cudart transitively — the combination is not viable. ggml also links `CUDA::cudart` (shared) by default; `CMAKE_CUDA_RUNTIME_LIBRARY=Static` does not change that. Both runtimes register `libcudart`, `libcublas` and `libcublasLt` in the loader cache, so dynamic linking works on both.
 
 You rely on the runtime's toolkit, so the contract is the CUDA **major** version. The build uses the oldest minor you support (section 7) and no NVIDIA libraries are redistributed. Each archive carries the project `LICENSE`, a `BUILD_INFO.json` and a short `check-runtime.sh`. The script fails if the needed major soname is missing from `ldconfig -p`, and only warns if the toolkit minor is below the build minor. Your runtime checks confirmed both toolkits register `libcudart`, `libcublas` and `libcublasLt` in the loader cache, so no RPATH fallback is needed.
 
@@ -185,7 +187,7 @@ Each release contains the 2 archives (Ubuntu 24.04 + CUDA 13.0 for Colab, Ubuntu
 
 **Verification gates in `build` (no GPU needed):**
 
-- `ldd` on every binary reports no `not found` **except `libcuda.so.1`** (the driver library — absent on GPU-less runners, provided by the NVIDIA driver on the target), and the set of needed CUDA libraries equals the expected sonames for that target (for example `libcublas.so.13` and `libcublasLt.so.13` for CUDA 13.0).
+- `ldd` on every binary reports no `not found` **except `libcuda.so.1`** (the driver library — absent on GPU-less runners, provided by the NVIDIA driver on the target), and the set of needed CUDA libraries equals the expected sonames for that target (`libcudart.so.12`, `libcublas.so.12`, `libcublasLt.so.12` for CUDA 12.8; `.13` for CUDA 13.0).
 - `cuobjdump --list-elf` on the binary or backend library shows **only `sm_75`**.
 - `llama-server --version` and `llama-cli --version` — warn-only on GPU-less runners (the binaries hard-depend on `libcuda.so.1`); the real smoke test happens on the T4.
 - Archive size is within an expected range (catches a flag that silently doubled it).
@@ -254,7 +256,6 @@ jobs:
             -DGGML_CUDA=ON -DCMAKE_CUDA_COMPILER="$CUDA_HOME/bin/nvcc" \
             -DCMAKE_CUDA_ARCHITECTURES=75-real -DGGML_NATIVE=OFF \
             -DGGML_CUDA_FA_ALL_QUANTS=OFF -DBUILD_SHARED_LIBS=OFF \
-            -DCMAKE_CUDA_RUNTIME_LIBRARY=Static \
             -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
             -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++" \
             -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
@@ -322,7 +323,7 @@ Not shown: the restore-only `warm` job for sources with nothing new, and `CCACHE
 
 ## 15. Settled decisions and what is left
 
-**Settled:** public `Llama-Cpp-CUDA-Builder` repo (default branch `main`); both llama.cpp and TurboQuant; **Kaggle (Ubuntu 22.04, CUDA 12.8) is the first deliverable**, Colab (Ubuntu 24.04, CUDA 13.0) second; `FA_ALL_QUANTS=OFF` initially, `ON` in the validatable-binaries phase (required for turbo4 K / turbo3 V); dynamic cuBLAS with a major-only soname and oldest-minor builds; twice-weekly cadence plus manual dispatch; rolling latest releases; keep the last 8 immutable releases per source; no HF mirror — GitHub assets are sufficient; `ggml-org/ccache-action` (pinned by SHA); track latest `bNNNN` prerelease; live-run validation via authenticated `gh` CLI; loose TDD (gates first); **two workflows, one per source** (`cuda-t4-release-llama-cpp.yml`, `cuda-t4-release-turboquant.yml`); **releases published with `softprops/action-gh-release`** (v3.0.4, SHA-pinned); **Web UI dropped for the initial build only — it MUST be present in subsequent builds after initial verification** (built from source with npm, not the HF bucket).
+**Settled:** public `Llama-Cpp-CUDA-Builder` repo (default branch `main`); both llama.cpp and TurboQuant; **Kaggle (Ubuntu 22.04, CUDA 12.8) is the first deliverable**, Colab (Ubuntu 24.04, CUDA 13.0) second; `FA_ALL_QUANTS=OFF` initially, `ON` in the validatable-binaries phase (required for turbo4 K / turbo3 V); dynamic cudart/cuBLAS/cuBLASLt with a major-only soname and oldest-minor builds (static cudart + dynamic cuBLAS is not viable — `libcublas.so.12` NEEDs `libcudart.so.12`); twice-weekly cadence plus manual dispatch; rolling latest releases; keep the last 8 immutable releases per source; no HF mirror — GitHub assets are sufficient; `ggml-org/ccache-action` (pinned by SHA); track latest `bNNNN` prerelease; live-run validation via authenticated `gh` CLI; loose TDD (gates first); **two workflows, one per source** (`cuda-t4-release-llama-cpp.yml`, `cuda-t4-release-turboquant.yml`); **releases published with `softprops/action-gh-release`** (v3.0.4, SHA-pinned); **Web UI dropped for the initial build only — it MUST be present in subsequent builds after initial verification** (built from source with npm, not the HF bucket).
 
 **Still open:**
 

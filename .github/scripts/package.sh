@@ -10,12 +10,12 @@ set -euo pipefail
 BIN_DIR=build/bin
 BINARIES=(llama-server llama-cli llama-bench llama-quantize llama-perplexity)
 CUDA_MAJOR="${CUDA%%.*}"
-EXPECTED_SONAMES=("libcublas.so.${CUDA_MAJOR}" "libcublasLt.so.${CUDA_MAJOR}")
+EXPECTED_SONAMES=("libcudart.so.${CUDA_MAJOR}" "libcublas.so.${CUDA_MAJOR}" "libcublasLt.so.${CUDA_MAJOR}")
 fail=0
 
 if [[ -n "${CUDA_HOME:-}" && -x "$CUDA_HOME/bin/cuobjdump" ]]; then CUOBJDUMP="$CUDA_HOME/bin/cuobjdump"; else CUOBJDUMP=cuobjdump; fi
 
-echo "=== Gate 1: ldd (no 'not found' except driver-provided libcuda.so.1, expected CUDA sonames only, no libcudart) ==="
+echo "=== Gate 1: ldd (no 'not found' except driver-provided libcuda.so.1, expected CUDA sonames only) ==="
 for b in "${BINARIES[@]}"; do
   [[ -x "$BIN_DIR/$b" ]] || { echo "FAIL: missing binary $BIN_DIR/$b"; fail=1; continue; }
   out=$(ldd "$BIN_DIR/$b")
@@ -23,10 +23,7 @@ for b in "${BINARIES[@]}"; do
   if echo "$out" | grep 'not found' | grep -v 'libcuda.so.1' | grep -q .; then
     echo "FAIL: $b has unresolved dependencies"; fail=1
   fi
-  if echo "$out" | grep -qE 'libcudart\.so'; then
-    echo "FAIL: $b links libcudart dynamically (expected static cudart)"; fail=1
-  fi
-  needed=$(echo "$out" | grep -oE 'libcublas(Lt)?\.so\.[0-9]+' | sort -u || true)
+  needed=$(echo "$out" | grep -oE 'libcudart\.so\.[0-9]+|libcublas(Lt)?\.so\.[0-9]+' | sort -u || true)
   for s in $needed; do
     found=0
     for e in "${EXPECTED_SONAMES[@]}"; do [[ "$s" == "$e" ]] && found=1; done
@@ -91,12 +88,12 @@ cat > "$STAGE/BUILD_INFO.json" <<EOF
     "cuda": "${CUDA}",
     "cuda_major": ${CUDA_MAJOR},
     "cuda_package": "${CUDA_PKG}",
-    "cmake_flags": "-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75-real -DGGML_NATIVE=OFF -DGGML_CUDA_FA_ALL_QUANTS=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_CUDA_RUNTIME_LIBRARY=Static -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache -DCMAKE_EXE_LINKER_FLAGS=-static-libgcc -static-libstdc++ -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF",
+    "cmake_flags": "-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75-real -DGGML_NATIVE=OFF -DGGML_CUDA_FA_ALL_QUANTS=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache -DCMAKE_EXE_LINKER_FLAGS=-static-libgcc -static-libstdc++ -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF",
     "targets": ["llama-server", "llama-cli", "llama-bench", "llama-quantize", "llama-perplexity"],
     "ggml_cuda_fa_all_quants": false,
     "cuda_arch": "75-real",
     "build_shared_libs": false,
-    "cuda_runtime_library": "Static"
+    "cuda_runtime_library": "Shared"
   }
 }
 EOF
