@@ -19,8 +19,8 @@ KEYRING_URL="https://developer.download.nvidia.com/compute/cuda/repos/${DISTRO}/
 echo "installing cuda-keyring from $KEYRING_URL"
 curl -fsSL "$KEYRING_URL" -o /tmp/cuda-keyring.deb
 $S dpkg -i /tmp/cuda-keyring.deb
-$S apt-get update
-$S apt-get install -y --no-install-recommends \
+$S apt-get -o Acquire::Retries=3 update
+$S apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
   "cuda-compiler-${MM}" "cuda-libraries-dev-${MM}" "cuda-cuobjdump-${MM}" "cuda-nvml-dev-${MM}"
 
 echo "--- nvcc ---"
