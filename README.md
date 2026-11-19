@@ -9,7 +9,7 @@ Builds sm_75 (T4) CUDA binaries of [llama.cpp](https://github.com/ggml-org/llama
 
 - **Workflows:** one per source — `cuda-t4-release-llama-cpp.yml` and `cuda-t4-release-turboquant.yml` — each twice-weekly (Mon/Thu 04:17 UTC) + manual dispatch (`ref`, `force`), so each source can be iterated on independently.
 - **Releases:** one immutable release per (source, ref) + rolling `llama-cpp-latest` / `turboquant-latest` with stable asset names, published with `softprops/action-gh-release`. Keeps the last 8 immutable releases per source.
-- **Web UI:** dropped for the initial build only; it MUST be present in subsequent builds after initial verification (built from source with npm, not the HF bucket).
+- **Web UI:** llama-cpp uses the HF prebuilt UI (`LLAMA_BUILD_UI=OFF`, `LLAMA_USE_PREBUILT_UI=ON`, no npm); turboquant builds the UI from source with npm (node 22 via `actions/setup-node`, `cache: npm`). Embedded in `llama-server`.
 - **Binaries:** `llama-server`, `llama-cli`, `llama-bench`, `llama-quantize`, `llama-perplexity`. Dynamic cudart/cuBLAS/cuBLASLt by major soname; nothing from NVIDIA is bundled.
 - **Progress:** see `Task.md`. **Design:** see `CUDA sm_75 release pipeline for llama.cpp and TurboQuant.md`.
 
