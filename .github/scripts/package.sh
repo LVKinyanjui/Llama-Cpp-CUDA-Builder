@@ -88,7 +88,7 @@ cat > "$STAGE/BUILD_INFO.json" <<EOF
     "cuda": "${CUDA}",
     "cuda_major": ${CUDA_MAJOR},
     "cuda_package": "${CUDA_PKG}",
-    "cmake_flags": "-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75-real -DGGML_NATIVE=OFF -DGGML_CUDA_FA_ALL_QUANTS=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache -DCMAKE_EXE_LINKER_FLAGS=-static-libgcc -static-libstdc++ -s -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF",
+    "cmake_flags": "-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=75-real -DGGML_NATIVE=OFF -DGGML_CUDA_FA_ALL_QUANTS=OFF -DBUILD_SHARED_LIBS=OFF -DGGML_CCACHE=OFF -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache -DCMAKE_EXE_LINKER_FLAGS=-static-libgcc -static-libstdc++ -s -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF",
     "targets": ["llama-server", "llama-cli", "llama-bench", "llama-quantize", "llama-perplexity"],
     "ggml_cuda_fa_all_quants": false,
     "cuda_arch": "75-real",

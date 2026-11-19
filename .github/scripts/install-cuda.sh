@@ -21,7 +21,7 @@ curl -fsSL "$KEYRING_URL" -o /tmp/cuda-keyring.deb
 $S dpkg -i /tmp/cuda-keyring.deb
 $S apt-get update
 $S apt-get install -y --no-install-recommends \
-  "cuda-compiler-${MM}" "cuda-libraries-dev-${MM}" "cuda-cuobjdump-${MM}"
+  "cuda-compiler-${MM}" "cuda-libraries-dev-${MM}" "cuda-cuobjdump-${MM}" "cuda-nvml-dev-${MM}"
 
 echo "--- nvcc ---"
 "/usr/local/cuda-${CUDA}/bin/nvcc" --version

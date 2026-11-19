@@ -36,7 +36,7 @@ The notebook already contains the whole recipe: install CUDA, build with ccache 
 
 ### Problems found in the notebook (worth fixing before porting)
 
-1. **nvcc output is not cached.** Only `CMAKE_C_COMPILER_LAUNCHER` and `CMAKE_CXX_COMPILER_LAUNCHER` are set, and CUDA compilation is the slow part. Set `CMAKE_CUDA_COMPILER_LAUNCHER` too. **Verified 18 Nov 2026:** the fork's `ggml/src/CMakeLists.txt` shows `GGML_CCACHE=ON` (default) auto-detects ccache and sets `RULE_LAUNCH_COMPILE` for C/CXX only — it never sets `CMAKE_CUDA_COMPILER_LAUNCHER`. Explicit `CMAKE_CUDA_COMPILER_LAUNCHER=ccache` is required.
+1. **nvcc output is not cached.** Only `CMAKE_C_COMPILER_LAUNCHER` and `CMAKE_CXX_COMPILER_LAUNCHER` are set, and CUDA compilation is the slow part. **Verified 18 Nov 2026:** the fork's `ggml/src/CMakeLists.txt` shows `GGML_CCACHE=ON` (default) auto-detects ccache and sets `RULE_LAUNCH_COMPILE` **globally** (it applies to CUDA too) — so setting `CMAKE_CUDA_COMPILER_LAUNCHER=ccache` as well produced a double `ccache ccache nvcc`. Fix: `GGML_CCACHE=OFF` and explicit `CMAKE_C_COMPILER_LAUNCHER` / `CMAKE_CXX_COMPILER_LAUNCHER` / `CMAKE_CUDA_COMPILER_LAUNCHER` = `ccache`.
 2. **cuBLAS is a shared dependency.** `-DCMAKE_CUDA_RUNTIME_LIBRARY=Static` does not change ggml's link choice — ggml links `CUDA::cudart` (shared) by default, and `libcublas.so.12` NEEDs `libcudart.so.12` anyway, so dynamic cudart is unavoidable with dynamic cuBLAS. The binaries need `libcudart`, `libcublas` and `libcublasLt` from the runtime's toolkit. That suits your runtimes (section 9) and is confirmed with `ldd`.
 3. **PR checkout is not conditional.** The `git fetch ... {pr_ID}` lines sit outside the `if`, so an empty PR field fails with a NameError.
 4. **`repo_url` carries literal escaped quotes** in the dropdown value, and the `LD_LIBRARY_PATH` lines overwrite each other. Both are irrelevant in CI but would be copied if ported verbatim.
@@ -118,7 +118,7 @@ Two targets cover both runtimes: **Ubuntu 24.04 for Colab** and **Ubuntu 22.04 f
 | `Jimver/cuda-toolkit` action | Works on Linux with `method: network` and `sub-packages`. Convenient, but it's a third-party dependency, and its Linux support lags new CUDA releases. Pin by SHA if used. |
 | Local `.deb` / `.run` installer (the notebook) | Multi-GB download. No benefit on CI. |
 
-Minimal package set, with `MM` as `12-8` or `13-0` **\[verify exact names on first run\]**: `cuda-compiler-MM cuda-libraries-dev-MM cuda-cuobjdump-MM`
+Minimal package set, with `MM` as `12-8` or `13-0` (verified 18 Nov 2026): `cuda-compiler-MM cuda-libraries-dev-MM cuda-cuobjdump-MM cuda-nvml-dev-MM`. `cuda-nvml-dev-MM` provides `nvml.h`, required by upstream since b12534 (`ggml-cuda.cu` includes `<nvml.h>` unconditionally for CUDA builds).
 
 - Set `CUDA_HOME=/usr/local/cuda-13.0` (or `-12.8`) explicitly and pass `-DCMAKE_CUDA_COMPILER=$CUDA_HOME/bin/nvcc`. Don't rely on the `/usr/local/cuda` symlink.
 - **Build with the oldest minor you support (12.8 and 13.0) and run on anything newer in the same major.** The binaries record only the major soname (`libcudart.so.12`, `libcublas.so.12` or `.13`), so a runtime that moves to 12.9 or 13.1 keeps working. Only a runtime below the build minor, or a new major, breaks it. ABI stability within a major is **\[verify\]** for cuBLAS: test one cross-minor pairing when a runtime next upgrades.
@@ -138,7 +138,8 @@ Minimal package set, with `MM` as `12-8` or `13-0` **\[verify exact names on fir
 | `GGML_CUDA_GRAPHS` | leave default |  |
 | `GGML_CUDA_FORCE_MMQ` / `FORCE_CUBLAS` | leave default | Tuning knobs, not packaging decisions. |
 | `GGML_CUDA_COMPRESSION_MODE` | `size` (try it) | Shrinks the fatbin. Archive size matters for ephemeral environments, so test the effect on size and on load time. |
-| `CMAKE_CUDA_COMPILER_LAUNCHER` | `ccache` | Caches nvcc output, which the notebook missed. **Verified 18 Nov 2026:** `GGML_CCACHE=ON` (default) auto-detects ccache for C/CXX only (`ggml/src/CMakeLists.txt`) and never sets the CUDA launcher — set it explicitly. |
+| `GGML_CCACHE` | OFF | Disable ggml's global `RULE_LAUNCH_COMPILE=ccache` (it applies to CUDA too and caused a double `ccache ccache nvcc`). |
+| `CMAKE_C_COMPILER_LAUNCHER` / `CMAKE_CXX_COMPILER_LAUNCHER` / `CMAKE_CUDA_COMPILER_LAUNCHER` | `ccache` | Explicit launchers for all three languages; caches nvcc output, which the notebook missed. |
 | `BUILD_SHARED_LIBS` | OFF | Single-file binaries, as in the notebook. |
 
 | `CMAKE_EXE_LINKER_FLAGS` | `-static-libgcc -static-libstdc++ -s` | As in the notebook, plus `-s` to strip symbols (smaller archives for ephemeral environments; decided 18 Nov 2026). No RPATH is set, because both runtimes register the CUDA libraries in the loader cache. |
@@ -200,7 +201,7 @@ The real functional test, loading a model on a T4, stays **manual** (a Colab not
 
 - Each cell restores its cache every run, and the `warm` job covers sources with nothing new.
 - **Budget:** four cells share 10 GB, and ccache-action is expected to save a new entry each run **\[verify\]**. Set a per-cell `max-size`, delete superseded entries, and measure real sizes in Phase 1. `FA_ALL_QUANTS=ON` (Phase 3) makes the cells larger.
-- **Hit rate:** use a fixed workspace path, `CCACHE_COMPILERCHECK=content` and `CMAKE_CUDA_COMPILER_LAUNCHER=ccache`, and check `ccache -s`.
+- **Hit rate:** use a fixed workspace path, `CCACHE_COMPILERCHECK=content` and explicit `CMAKE_*_COMPILER_LAUNCHER=ccache` (with `GGML_CCACHE=OFF`), and check `ccache -s`.
 - Expect a cold build after a cache loss, or after a header change that invalidates many kernels.
 
 ## 12. Workflow skeleton
@@ -256,7 +257,8 @@ jobs:
             -DGGML_CUDA=ON -DCMAKE_CUDA_COMPILER="$CUDA_HOME/bin/nvcc" \
             -DCMAKE_CUDA_ARCHITECTURES=75-real -DGGML_NATIVE=OFF \
             -DGGML_CUDA_FA_ALL_QUANTS=OFF -DBUILD_SHARED_LIBS=OFF \
-            -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
+            -DGGML_CCACHE=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_CUDA_COMPILER_LAUNCHER=ccache \
             -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -s" \
             -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
             -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF
@@ -310,7 +312,7 @@ Not shown: the restore-only `warm` job for sources with nothing new, and `CCACHE
 
 ## 14. Phased plan
 
-**Phase 0: confirm the unknowns (a few hours).** The runtime check is done: both runtimes register `libcudart`, `libcublas` and `libcublasLt` in the loader cache. Phase 0 research completed 18 Nov 2026 (see section 3): TurboQuant default branch and `qwen35` support confirmed; `GGML_CCACHE` covers C/CXX only; `ggml-org/ccache-action` verified; `bNNNN` prerelease scheme confirmed. Still to check: the exact apt package names for 13.0 and 12.8 on both distros; `GGML_CUDA_CCCL_VERSION` for CUDA 12.8; how ccache-action names and saves entries; the TurboQuant build flags; and the runtimes' CPU flags.
+**Phase 0: confirm the unknowns (a few hours).** The runtime check is done: both runtimes register `libcudart`, `libcublas` and `libcublasLt` in the loader cache. Phase 0 research completed 18 Nov 2026 (see section 3): TurboQuant default branch and `qwen35` support confirmed; `GGML_CCACHE` sets `RULE_LAUNCH_COMPILE` globally (covers CUDA — caused a double ccache; fixed with `GGML_CCACHE=OFF` + explicit launchers); `ggml-org/ccache-action` verified; `bNNNN` prerelease scheme confirmed; apt package names verified (including `cuda-nvml-dev-MM`, required by upstream since b12534). Still to check: `GGML_CUDA_CCCL_VERSION` for CUDA 12.8; how ccache-action names and saves entries; the TurboQuant build flags; and the runtimes' CPU flags.
 
 **Phase 1: Kaggle deliverable (first milestone).** Ubuntu 22.04 (container) + CUDA 12.8, **both sources** (llama-cpp and TurboQuant), `FA_ALL_QUANTS=OFF`, the five targets, verification gates, packaging, and the full pipeline: twice-weekly poller (Mon/Thu 04:17 UTC) + manual dispatch, idempotency by tag, all-or-nothing release, checksums/manifest, rolling `-latest` releases, and pruning to 8 immutable releases per source. **Web UI per source:** llama-cpp uses the HF prebuilt UI (no npm); turboquant builds from source with npm (`LLAMA_BUILD_UI=ON`, `LLAMA_USE_PREBUILT_UI=OFF`); `actions/setup-node` provides node 22 with `cache: npm` for turboquant. Loose TDD: gates first, then build, then release; validate layer by layer via live runs (`gh run view --log`). Record cold and warm times, ccache size and hit rate, archive size, `ldd` output and `cuobjdump` output. Download the archive on a Kaggle T4, run `check-runtime.sh`, and run `Qwen3.8-27B-GSQ-RCO-IQ2_S-mtp.gguf` (turbo5 K / turbo3 V or f16 KV — turbo4 K / turbo3 V needs Phase 3). This confirms dynamic cuBLAS resolves with nothing bundled.
 
