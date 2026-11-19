@@ -14,6 +14,9 @@ esac
 
 MM="${CUDA/./-}" # 12.8 -> 12-8, 13.0 -> 13-0
 S=$(command -v sudo || true)
+for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+  [ -f "$f" ] && $S sed -i 's|archive.ubuntu.com|azure.archive.ubuntu.com|g; s|security.ubuntu.com|azure.archive.ubuntu.com|g' "$f"
+done
 
 KEYRING_URL="https://developer.download.nvidia.com/compute/cuda/repos/${DISTRO}/x86_64/cuda-keyring_1.1-1_all.deb"
 echo "installing cuda-keyring from $KEYRING_URL"

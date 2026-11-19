@@ -52,6 +52,9 @@ jobs:
       - name: Install dependencies
         run: |
           S=$(command -v sudo || true)
+          for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -f "$f" ] && $S sed -i 's|archive.ubuntu.com|azure.archive.ubuntu.com|g; s|security.ubuntu.com|azure.archive.ubuntu.com|g' "$f"
+          done
           $S apt-get -o Acquire::Retries=3 update
           $S apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
             git curl ca-certificates gnupg \
