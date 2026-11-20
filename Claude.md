@@ -21,7 +21,11 @@ u # Claude.md — how to work on this project
 - Shell scripts and workflow YAML use LF line endings (enforced by `.gitattributes`).
 - Live-run validation uses the authenticated `gh` CLI (`repo` + `workflow` scopes): `gh run list`, `gh run view <id> --log`, `gh run watch <id>` (poll, don't block). No MCP server needed.
 
-## Repo conventions
+## Workflow procedure & release gotchas (mandatory)
+
+1. **Rebuilding or Adding Matrix Targets (`force=true`)**: `plan.sh` checks if the release tag (`$TAG`) already exists. If it exists and `force` is `false`, it skips the source. If you add a new target (e.g. adding Ubuntu 24.04 / CUDA 13.0) to an existing tag/commit, you **must** pass `force=true` on manual dispatch, otherwise `plan.sh` returns `[]` and nothing builds.
+2. **Scheduled Biweekly Runs**: Scheduled runs evaluate the latest upstream commit/tag and safely skip if no new upstream tag/commit exists (idempotent, preventing wasted runner minutes).
+3. **Reproducible "Time Travel" Releases**: To build and release binaries corresponding to specific historical commits or tags, pass the specific ref or SHA via `workflow_dispatch` input (`ref`) along with `force=true`. Rerunning a failed/completed workflow run via `gh run rerun` reuses existing artifacts if available, but for building specific past commits, use `workflow_dispatch` with `ref` and `force=true`.
 
 - Default branch `main`; public repo; no license yet (deferred).
 - Two workflows, one per source: `cuda-t4-release-llama-cpp.yml`, `cuda-t4-release-turboquant.yml`, sharing `.github/scripts/`.
