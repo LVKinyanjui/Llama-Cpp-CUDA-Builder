@@ -53,6 +53,8 @@ GitHub Actions workflow(s) that build sm_75 CUDA binaries of llama.cpp and Turbo
 - [x] Live-run validation via `gh` CLI — both workflows green (runs 44317051305, 44317061640, 44320495564, 44320504399). Releases published: `llama-cpp-b12503` (155 MB), `turboquant-20261111-4185b90` (266 MB), plus rolling `llama-cpp-latest` / `turboquant-latest` pre-releases. ccache effective (rebuilds ~3–4 min). `-s` stripping barely reduced size (CUDA fatbin dominates); archive cap raised to 500 MB.
 - [ ] Kaggle T4 functional test: download archive, run `check-runtime.sh`, run `Qwen3.8-27B-GSQ-RCO-IQ2_S-mtp.gguf` (turbo5 K / turbo3 V or f16 KV — turbo4 K / turbo3 V needs Phase 3)
 - [x] **Web UI re-enabled after initial verification** — per source: llama-cpp uses the HF prebuilt UI (no npm); turboquant builds from source with npm (node 22, `cache: npm`). Verify `llama-server` serves the UI on the T4 (pending Kaggle test).
+- [x] **All quants enabled for TurboQuant (`GGML_CUDA_FA_ALL_QUANTS=ON`)** — required for turbo4 K / turbo3 V cache types. Vanilla llama-cpp keeps `FA_ALL_QUANTS=OFF` to save build time.
+- [x] **Monitoring & troubleshooting guide created** — `Monitoring.md` added and linked from `README.md`.
 
 ### Phase 2 — Colab target
 
