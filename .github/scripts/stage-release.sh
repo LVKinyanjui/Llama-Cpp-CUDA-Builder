@@ -36,6 +36,11 @@ fi
 WORK="${RUNNER_TEMP:-/tmp}/release-$name"
 rm -rf "$WORK"
 mkdir -p "$WORK/assets" "$WORK/latest"
+
+# Extract FA_ALL_QUANTS setting from the first asset's BUILD_INFO.json
+first_asset=$(jq -r '.[0].asset' <<< "$MATRIX")
+fa_all_quants=$(tar -xOzf "$DIST/$first_asset" ./BUILD_INFO.json | jq -r '.build.ggml_cuda_fa_all_quants' || echo "unknown")
+
 while IFS= read -r asset; do
   cp "$DIST/$asset" "$WORK/assets/$asset"
   stable="${name}-${asset#"${tag}"-}"
@@ -69,7 +74,7 @@ cat > "$WORK/notes.md" <<EOF
 Automated sm_75 CUDA build of \`$repo\` @ \`$sha\` (\`$ref\`).
 
 - Arch: sm_75 (75-real); dynamic cudart/cuBLAS/cuBLASLt by major soname
-- \`GGML_CUDA_FA_ALL_QUANTS=OFF\`
+- \`GGML_CUDA_FA_ALL_QUANTS=$(echo "$fa_all_quants" | tr '[:lower:]' '[:upper:]')\`
 - Requires: NVIDIA driver >= 525 (CUDA 12.x) and the CUDA toolkit libraries registered in the loader cache (\`libcudart.so.12\`, \`libcublas.so.12\`, \`libcublasLt.so.12\`). See \`check-runtime.sh\` in the archive.
 EOF
 
