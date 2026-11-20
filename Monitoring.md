@@ -81,3 +81,11 @@ gh workflow run cuda-t4-release-llama-cpp.yml --ref main -f force=true
 - **Will scheduled runs fail?** **No.** Scheduled runs (`cron: "17 4 * * 1,4"`) always evaluate against the *latest upstream commit/tag* at that exact moment.
   - For **llama.cpp**: The cron runs on Monday/Thursday. If upstream tagged a new `bNNNN` version since the last run, `$TAG` will be *new* (e.g., `llama-cpp-b12541`), so `plan.sh` will not skip it. If upstream has *not* tagged a new version, `$TAG` already exists, `plan.sh` will gracefully skip, and no redundant runner minutes or duplicate releases will be consumed.
   - For **TurboQuant**: The cron checks the HEAD of `feature/turboquant-kv-cache` and computes the tag based on the commit date and SHA (e.g., `turboquant-20261111-4185b90`). Unless commits landed on that branch on a Monday or Thursday, `$TAG` will already exist, and the scheduled run will safely skip. When new commits *do* land, the SHA/date changes, producing a new unique tag, so the build and release proceed automatically without failure.
+
+### 3. Reproducible "Time Travel" Releases & Rerunning Jobs
+- **Rerunning Failed/Completed Runs (`gh run rerun`)**: Rerunning a run via `gh run rerun <RUN_ID>` restarts the execution using the *exact same matrix* resolved during that run's initial plan step. If a target was missing or skipped, rerunning will not add new targets.
+- **Building Past Commits / Recovering Historical Binaries**: To build and release binaries corresponding to a specific historical commit, tag, or pull request, trigger a manual workflow dispatch providing the specific ref/SHA via the `ref` input, along with `force=true`:
+  ```bash
+  gh workflow run cuda-t4-release-turboquant.yml --ref <COMMIT_SHA_OR_TAG> -f force=true
+  gh workflow run cuda-t4-release-llama-cpp.yml --ref <COMMIT_SHA_OR_TAG> -f force=true
+  ```
