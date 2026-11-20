@@ -91,7 +91,8 @@ for name in llama-cpp turboquant; do
 
   for target in "${TARGETS[@]}"; do
     IFS=: read -r ubuntu cuda cuda_mm container <<< "$target"
-    asset="${TAG}-bin-ubuntu${ubuntu}-x64-cuda${cuda}-sm75.tar.gz"
+    # Append short SHA to asset name to prevent clobbering
+    asset="${TAG}-${SHA:0:7}-bin-ubuntu${ubuntu}-x64-cuda${cuda}-sm75.tar.gz"
     ENTRIES+=("$(jq -nc \
       --arg name "$name" --arg repo "$REPO" --arg sha "$SHA" --arg ref "$REF_RESOLVED" \
       --arg tag "$TAG" --argjson prerelease "$PRERELEASE" \
@@ -101,6 +102,25 @@ for name in llama-cpp turboquant; do
         ubuntu:$ubuntu, cuda:$cuda, cuda_mm:$cuda_mm, container:$container, asset:$asset}')")
   done
 done
+
+# If release exists, check if all assets exist. If so, skip.
+if [[ "$FORCE" != "true" && "$(gh release view "$TAG" --json assets --jq '.assets[].name' 2>/dev/null)" ]]; then
+  echo "release $TAG exists. checking for missing assets..."
+  MISSING_ASSETS=()
+  for row in $(jq -r '.[] | @base64' <<< "$MATRIX"); do
+    _jq() { echo "${row}" | base64 --decode | jq -r "${1}"; }
+    asset=$(_jq '.asset')
+    if ! gh release view "$TAG" --json assets --jq ".assets[].name" | grep -q "^$asset$"; then
+      MISSING_ASSETS+=("$asset")
+    fi
+  done
+  if [[ ${#MISSING_ASSETS[@]} -eq 0 ]]; then
+    echo "all assets exist for release $TAG. skipping."
+    MATRIX='[]'
+  else
+    echo "missing assets: ${MISSING_ASSETS[*]}. rebuilding."
+  fi
+fi
 
 if [[ ${#ENTRIES[@]} -eq 0 ]]; then
   MATRIX='[]'
