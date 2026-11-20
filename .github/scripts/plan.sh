@@ -9,8 +9,9 @@ SOURCE="${SOURCE:-all}"
 REF="${REF:-}"
 FORCE="${FORCE:-false}"
 
-# Targets to build. Phase 2: Colab target (Ubuntu 24.04 + CUDA 13.0).
+# Targets to build. Phase 1 & 2: Kaggle (Ubuntu 22.04 + CUDA 12.8) and Colab (Ubuntu 24.04 + CUDA 13.0).
 TARGETS=(
+  "22.04:12.8:12-8:ubuntu:22.04"
   "24.04:13.0:13-0:"
 )
 
