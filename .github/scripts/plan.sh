@@ -9,9 +9,10 @@ SOURCE="${SOURCE:-all}"
 REF="${REF:-}"
 FORCE="${FORCE:-false}"
 
-# Targets to build. Phase 1: Kaggle only. Phase 2 adds the Colab row:
-#   "24.04:13.0:13-0:"   # Ubuntu 24.04 + CUDA 13.0, no container
-TARGETS=("22.04:12.8:12-8:ubuntu:22.04")
+# Targets to build. Phase 2: Colab target (Ubuntu 24.04 + CUDA 13.0).
+TARGETS=(
+  "24.04:13.0:13-0:"
+)
 
 case "$SOURCE" in
   all|llama-cpp|turboquant) ;;
