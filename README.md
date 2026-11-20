@@ -8,10 +8,10 @@ Builds sm_75 (T4) CUDA binaries of [llama.cpp](https://github.com/ggml-org/llama
 | Ubuntu 24.04 | Colab | 13.0 | Phase 2 |
 
 - **Workflows:** one per source — `cuda-t4-release-llama-cpp.yml` and `cuda-t4-release-turboquant.yml` — each twice-weekly (Mon/Thu 04:17 UTC) + manual dispatch (`ref`, `force`), so each source can be iterated on independently.
-- **Releases:** one immutable release per (source, ref) + rolling `llama-cpp-latest` / `turboquant-latest` with stable asset names, published with `softprops/action-gh-release`. Keeps the last 8 immutable releases per source.
-- **Web UI:** llama-cpp uses the HF prebuilt UI (`LLAMA_BUILD_UI=OFF`, `LLAMA_USE_PREBUILT_UI=ON`, no npm); turboquant builds the UI from source with npm (node 22 via `actions/setup-node`, `cache: npm`). Embedded in `llama-server`.
-- **Binaries:** `llama-server`, `llama-cli`, `llama-bench`, `llama-quantize`, `llama-perplexity`. Dynamic cudart/cuBLAS/cuBLASLt by major soname; nothing from NVIDIA is bundled.
-- **Progress:** see `Task.md`. **Design:** see `CUDA sm_75 release pipeline for llama.cpp and TurboQuant.md`. **Monitoring & Troubleshooting:** see [Monitoring.md](Monitoring.md).
+- **Releases (Option B):** Grouped releases (one tag per upstream commit/ref) containing all matrix assets. Assets are versioned with a short build-hash to prevent clobbering. If a new target is added to the matrix, a re-run of the full matrix updates the release tag with the complete, combined set of binaries.
+- **Atomic Builds:** Workflows are designed for atomic matrix builds; all targets in the matrix must be built to update the release successfully.
+- **Workflow Gotchas (Claude.md):** The protocol for manual dispatches is to always run the full matrix and use `force=true` if updating an existing tag.
+- **Monitoring (Monitoring.md):** Instructions for tracking the full matrix workflow status and logs using `gh` CLI.
 
 ## Repository conventions
 
